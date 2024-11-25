@@ -43,6 +43,15 @@ impl PriceFeedTrait for MockOracleContract {
     fn decimals(_e: Env) -> u32 {
         14
     }
+
+    fn base(e: Env) -> Asset {
+        let mut base: Option<Asset> = e.storage().instance().get(&"base");
+        if base.is_none() {
+            base = Some(Asset::Stellar(Address::generate(&e)));
+            e.storage().instance().set(&"base", &base.clone().unwrap());
+        }
+        base.unwrap()
+    }
 }
 
 #[contractimpl]
@@ -86,7 +95,8 @@ fn test() {
         pools: Map::from_array(&env,[(pool_asset.clone(), pool_address)]),
     });
 
-    assert_eq!(proxy_client.lastprice(&Asset::Stellar(asset1.clone())).unwrap().price, 10i128.pow(14));
+    let asset1_price = proxy_client.lastprice(&Asset::Stellar(asset1.clone())).unwrap();
+    assert_eq!(asset1_price.price, 10i128.pow(14));
 
     assert_eq!(proxy_client.lastprice(&Asset::Stellar(asset2.clone())).unwrap().price, 10i128.pow(14));
 
@@ -94,7 +104,9 @@ fn test() {
 
     assert_eq!(proxy_client.lastprice(&Asset::Stellar(Address::generate(&env))), None);
 
-    let price = proxy_client.lastprice(&Asset::Stellar(pool_asset));
+    assert_eq!(proxy_client.lastprice(&Asset::Stellar(pool_asset)).unwrap().price, 10i128.pow(14) * 2);
 
-    assert_eq!(price.unwrap().price, 10i128.pow(14) * 2);
+    let base = proxy_client.base();
+
+    assert_eq!(proxy_client.lastprice(&base).unwrap().price, 10i128.pow(14));
 }

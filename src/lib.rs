@@ -8,19 +8,25 @@ use soroban_sdk::{contract, contractimpl, Env, Vec, Address, U256, BytesN, Map};
 
 use types::{aqua_pool_trait::AquaPoolClient, asset::Asset, config_data::ConfigData, error::Error, price_data::PriceData, price_feed_trait::{PriceFeedClient, PriceFeedTrait}};
 
+const DECIMALS: u32 = 14;
+
 #[contract]
 pub struct ProxyContract;
 
 #[contractimpl]
 impl PriceFeedTrait for ProxyContract {
     fn lastprice(e: Env, asset: Asset) -> Option<PriceData> {
+        let oracle_client = get_oracle_client(&e);
+        let base: Asset = oracle_client.base();
+        if base == asset {
+            return Some(get_base_price(&e));
+        }
         match asset {
             Asset::Stellar(address) => {
                 let pool_address = e.get_pools().get(address.clone());
                 if pool_address.is_some() {
-                    return get_pool_price(&e, &pool_address.unwrap());
+                    return get_pool_price(&e, &pool_address.unwrap(), &oracle_client, &base);
                 } else {
-                    let oracle_client = get_oracle_client(&e);
                     return oracle_client.lastprice(&Asset::Stellar(address));
                 }
             }
@@ -31,7 +37,11 @@ impl PriceFeedTrait for ProxyContract {
     }
 
     fn decimals(_e: Env) -> u32 {
-        14
+        DECIMALS
+    }
+
+    fn base(e: Env) -> Asset {
+        get_oracle_client(&e).base()
     }
 }
 
@@ -126,7 +136,7 @@ impl ProxyContract {
     }
 }
 
-fn get_pool_price(e: &Env, pool: &Address) -> Option<PriceData> {
+fn get_pool_price(e: &Env, pool: &Address, oracle_client: &PriceFeedClient, base: &Asset) -> Option<PriceData> {
     let pool_client = AquaPoolClient::new(e, pool);
     let total_shares = pool_client.get_total_shares();
     if total_shares == 0 {
@@ -140,13 +150,23 @@ fn get_pool_price(e: &Env, pool: &Address) -> Option<PriceData> {
     if reserves.len() != 2 {
         e.panic_with_error(Error::InvalidPool);
     }
-    let oracle_client = get_oracle_client(e);
-    let token_a_price = oracle_client.lastprice(&Asset::Stellar(tokens.first().unwrap()));
-    let token_b_price = oracle_client.lastprice(&Asset::Stellar(tokens.last().unwrap()));
+    let token_a_price = get_price(e, oracle_client, base,&Asset::Stellar(tokens.first().unwrap()));
+    let token_b_price = get_price(e, oracle_client, base,&Asset::Stellar(tokens.last().unwrap()));
     if token_a_price.is_none() || token_b_price.is_none() {
         return None;
     }
     calculate_price(e, reserves, total_shares, &token_a_price.unwrap(), &token_b_price.unwrap())
+}
+
+fn get_price(e: &Env, oracle_client: &PriceFeedClient, base: &Asset, asset: &Asset) -> Option<PriceData> {
+    if base == asset {
+        return Some(get_base_price(&e));
+    } 
+    oracle_client.lastprice(&asset)
+}
+
+fn get_base_price(e: &Env) -> PriceData {
+    PriceData { price: 10i128.pow(DECIMALS), timestamp: e.ledger().timestamp() }
 }
 
 fn get_oracle_client<'a>(e: &Env) -> PriceFeedClient<'a> {

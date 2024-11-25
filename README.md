@@ -7,3 +7,4 @@ functions:
 
 - `decimals`
 - `lastprice`
+- `base`

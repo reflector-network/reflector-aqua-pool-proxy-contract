@@ -9,4 +9,6 @@ pub trait PriceFeedTrait {
     fn lastprice(env: Env, asset: Asset) -> Option<PriceData>;
     
     fn decimals(env: Env) -> u32;
+
+    fn base(env: Env) -> Asset;
 }
